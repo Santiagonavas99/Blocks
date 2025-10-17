@@ -3,50 +3,81 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Notion Lite — Starter</title>
-    <link rel="stylesheet" href="styles.css" />
+    <title>Blocks</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Source Code Pro (Google Fonts) -->
+  <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
   </head>
+
   <body>
     <div id="app">
+      <!-- Sidebar -->
       <aside id="sidebar">
-        <div class="brand">Notion Lite</div>
+        <div class="brand">Blocks</div>
         <div class="sidebar-actions">
-          <button id="addPageBtn" title="Nueva página">＋ Nueva página</button>
+          <button id="addPageBtn">＋ Nueva página</button>
         </div>
         <nav id="pages"></nav>
-        <div class="sidebar-footer">
-          <button id="exportBtn" title="Exportar JSON">Exportar</button>
-          <label class="import-label" title="Importar JSON">
-            Importar <input id="importInput" type="file" accept="application/json" hidden />
-          </label>
-        </div>
       </aside>
 
+      <!-- Contenido principal -->
       <main id="main">
         <header id="topbar">
+          <nav id="breadcrumb" aria-label="Ruta de navegación"></nav>
           <input id="pageTitle" placeholder="Sin título" />
-          <div class="topbar-actions">
-            <button id="newBlockBtn" title="Nuevo bloque (Enter)">＋ Bloque</button>
-          </div>
+          <button id="newBlockBtn">＋ Bloque</button>
         </header>
 
-        <section id="editor" aria-label="Editor de bloques">
-          <!-- Bloques se renderizan aquí -->
-        </section>
+        <!-- Contenedor con scroll -->
+        <div id="editor-container">
+          <section id="editor" aria-label="Editor de bloques"></section>
+        </div>
       </main>
     </div>
 
-    <!-- Menú de slash (tipos de bloque) -->
+    <!-- Menú de slash -->
     <div id="slashMenu" class="slash-menu hidden" role="menu" aria-hidden="true">
       <div data-type="paragraph">Párrafo</div>
       <div data-type="h1">Encabezado H1</div>
       <div data-type="h2">Encabezado H2</div>
-      <div data-type="bulleted">Lista con viñetas</div>
+      <div data-type="bulleted">Lista</div>
       <div data-type="todo">Tarea</div>
       <div data-type="quote">Cita</div>
       <div data-type="code">Código</div>
     </div>
 
+    <!-- 🪄 Barra flotante de formato -->
+    <div id="formatBar" class="hidden">
+      <button data-cmd="bold" title="Negrita"><b>B</b></button>
+      <button data-cmd="italic" title="Cursiva"><i>I</i></button>
+      <button data-cmd="code" title="Código inline"><code>&lt;&gt;</code></button>
+    </div>
+
+    <!-- Botón de ayuda -->
+    <button id="helpBtn" title="Atajos de teclado">
+      <i data-lucide="help-circle"></i>
+    </button>
+
+    <!-- Modal de shortcuts -->
+    <div id="helpModal" class="modal hidden">
+      <div class="modal-content">
+        <h2>⌨️ Atajos de teclado</h2>
+        <table>
+          <tr><td><kbd>Enter</kbd></td><td>Nuevo bloque</td></tr>
+          <tr><td><kbd>Backspace</kbd></td><td>Eliminar bloque vacío</td></tr>
+          <tr><td><kbd>↑ / ↓</kbd></td><td>Navegar entre bloques</td></tr>
+          <tr><td><kbd>/</kbd></td><td>Mostrar menú de tipos</td></tr>
+          <tr><td><kbd>Ctrl + E</kbd></td><td>Exportar JSON</td></tr>
+          <tr><td><kbd>Ctrl + I</kbd></td><td>Importar JSON</td></tr>
+        </table>
+        <button id="closeHelpBtn">Cerrar</button>
+      </div>
+    </div>
+
     <script src="app.js"></script>
+    <script>
+      lucide.createIcons();
+    </script>
   </body>
 </html>

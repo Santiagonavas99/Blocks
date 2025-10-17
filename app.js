@@ -1,350 +1,432 @@
-// Notion Lite — ultra-MVP con páginas, bloques, slash menu y persistencia localStorage.
-const el = (sel, root=document) => root.querySelector(sel);
-const els = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+const el = (sel, root = document) => root.querySelector(sel);
+const els = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-// --- Estado ---
 const state = {
-  pages: [], // {id, title, blocks: [{id,type,text,checked}]}
+  pages: [],
   currentPageId: null,
 };
 
-// --- Persistencia ---
-const STORAGE_KEY = "notion-lite-v1";
+const STORAGE_KEY = "notion-lite-v6";
+
+// ========== Persistencia ==========
 function load() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      // Estado inicial
-      const pageId = crypto.randomUUID();
-      state.pages = [{
-        id: pageId,
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) Object.assign(state, JSON.parse(raw));
+  else {
+    const rootId = crypto.randomUUID();
+    state.pages = [
+      {
+        id: rootId,
         title: "Mi primera página",
+        parentId: null,
         blocks: [
-          { id: crypto.randomUUID(), type: "h1", text: "Bienvenido a Notion Lite 👋" },
-          { id: crypto.randomUUID(), type: "paragraph", text: "Escribe \"/\" para cambiar el tipo de bloque." },
-          { id: crypto.randomUUID(), type: "todo", text: "Soporte básico de tareas", checked: false },
-          { id: crypto.randomUUID(), type: "code", text: "console.log('Hola mundo');" },
-        ]
-      }];
-      state.currentPageId = pageId;
-      save();
-    } else {
-      const parsed = JSON.parse(raw);
-      Object.assign(state, parsed);
-    }
-  } catch (e) { console.error("Error al cargar:", e); }
+          { id: crypto.randomUUID(), type: "h1", text: "Bienvenido a Notion Lite 👋" },
+          { id: crypto.randomUUID(), type: "paragraph", text: "Usa Alt + ↑ o ↓ para mover bloques. Crea subpáginas desde la barra lateral." },
+        ],
+      },
+    ];
+    state.currentPageId = rootId;
+    save();
+  }
 }
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
-
-// --- Utilidades ---
-function currentPage() { return state.pages.find(p => p.id === state.currentPageId); }
-function setCurrentPage(id) { state.currentPageId = id; save(); render(); }
-function addPage() {
-  const id = crypto.randomUUID();
-  state.pages.unshift({ id, title: "Nueva página", blocks: [] });
-  state.currentPageId = id;
-  save(); render();
-}
-function deletePage(id) {
-  const idx = state.pages.findIndex(p => p.id === id);
-  if (idx === -1) return;
-  state.pages.splice(idx,1);
-  if (!state.pages.length) addPage();
-  else state.currentPageId = state.pages[0].id;
-  save(); render();
+function currentPage() {
+  return state.pages.find(p => p.id === state.currentPageId);
 }
 
-// --- Render Sidebar ---
+// ========== Sidebar limpio ==========
 function renderSidebar() {
-  const list = el("#pages");
-  list.innerHTML = "";
-  state.pages.forEach(p => {
-    const item = document.createElement("div");
-    item.className = "page-item" + (p.id === state.currentPageId ? " active" : "");
-    item.addEventListener("click", (e)=>{
-      if (e.target.closest(".page-actions")) return;
-      setCurrentPage(p.id);
-    });
+  const nav = el("#pages");
+  nav.innerHTML = "";
 
-    const input = document.createElement("input");
-    input.value = p.title;
-    input.addEventListener("input", ()=> {
-      p.title = input.value || "Sin título";
-      if (p.id === state.currentPageId) el("#pageTitle").value = p.title;
+  const rootPages = state.pages.filter(p => !p.parentId);
+  rootPages.forEach(p => renderPageTree(p, nav, 0));
+
+  lucide.createIcons();
+}
+
+// Render principal que coordina la UI
+function render() {
+  renderSidebar();
+  renderEditor();
+}
+
+function renderPageTree(page, container, depth) {
+  const item = document.createElement("div");
+  item.className = "page-item" + (page.id === state.currentPageId ? " active" : "");
+  item.style.paddingLeft = `${depth * 16 + 10}px`;
+  item.style.position = "relative";
+  item.style.display = "flex";
+  item.style.alignItems = "center";
+  item.style.justifyContent = "space-between";
+
+  // --- título de página ---
+  const span = document.createElement("span");
+  span.textContent = page.title;
+  span.className = "page-title";
+  span.onclick = (e) => {
+    e.stopPropagation();
+    state.currentPageId = page.id;
+    save();
+    render();
+  };
+
+  // --- botón para crear subpágina ---
+  const addSub = document.createElement("button");
+  addSub.className = "add-subpage";
+  addSub.innerHTML = '<i data-lucide="plus"></i>';
+  addSub.title = "Nueva subpágina";
+  addSub.onclick = (e) => {
+    e.stopPropagation();
+    const id = crypto.randomUUID();
+    state.pages.push({ id, title: "Nueva subpágina", parentId: page.id, blocks: [] });
+    state.currentPageId = id; // navegar a la subpágina nueva
+    save();
+    render();
+    // mejorar UX: enfocar y seleccionar el título de la nueva página
+    const titleInput = el("#pageTitle");
+    if (titleInput) {
+      titleInput.focus();
+      if (titleInput.select) titleInput.select();
+      else if (titleInput.setSelectionRange) titleInput.setSelectionRange(0, titleInput.value.length);
+    }
+  };
+
+  item.appendChild(span);
+  item.appendChild(addSub);
+
+  // --- botón para borrar página ---
+  const delBtn = document.createElement("button");
+  delBtn.className = "add-subpage delete-page";
+  delBtn.title = "Borrar página";
+  delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
+  delBtn.onclick = (e) => {
+    e.stopPropagation();
+    // confirmar
+    if (!confirm(`¿Borrar página "${page.title}" y todas sus subpáginas?`)) return;
+    deletePageAndChildren(page.id);
+    // si la página actual fue borrada, navegar al padre o a la primera página
+    if (!state.pages.find(p => p.id === state.currentPageId)) {
+      const parent = state.pages.find(p => p.id === page.parentId);
+      state.currentPageId = parent ? parent.id : (state.pages[0] ? state.pages[0].id : null);
+    }
+    save(); render();
+  };
+  item.appendChild(delBtn);
+  container.appendChild(item);
+
+  // --- renderizar subpáginas recursivamente ---
+  const children = state.pages.filter(p => p.parentId === page.id);
+  children.forEach(child => renderPageTree(child, container, depth + 1));
+}
+
+// Eliminar página y todos sus descendientes recursivamente
+function deletePageAndChildren(pageId) {
+  // recopilar ids a borrar
+  const toDelete = new Set();
+  function collect(id) {
+    toDelete.add(id);
+    state.pages.filter(p => p.parentId === id).forEach(ch => collect(ch.id));
+  }
+  collect(pageId);
+  state.pages = state.pages.filter(p => !toDelete.has(p.id));
+}
+
+// ========== Breadcrumb ==========
+function renderBreadcrumb() {
+  const breadcrumb = el("#breadcrumb");
+  breadcrumb.innerHTML = "";
+
+  const page = currentPage();
+  if (!page) return;
+
+  const trail = [];
+  let current = page;
+  while (current) {
+    trail.unshift(current);
+    current = state.pages.find(p => p.id === current.parentId);
+  }
+
+  trail.forEach((p, i) => {
+    const crumb = document.createElement("span");
+    crumb.textContent = p.title || "Sin título";
+    crumb.className = "breadcrumb-item";
+    crumb.onclick = () => {
+      state.currentPageId = p.id;
       save();
-    });
+      render();
+    };
+    breadcrumb.appendChild(crumb);
 
-    const actions = document.createElement("div");
-    actions.className = "page-actions";
-    const del = document.createElement("button");
-    del.textContent = "🗑";
-    del.title = "Eliminar página";
-    del.addEventListener("click", (e)=>{
-      e.stopPropagation();
-      if (confirm("¿Eliminar esta página?")) deletePage(p.id);
-    });
-    actions.appendChild(del);
-
-    item.appendChild(input);
-    item.appendChild(actions);
-    list.appendChild(item);
+    if (i < trail.length - 1) {
+      const sep = document.createElement("span");
+      sep.textContent = "›";
+      sep.className = "breadcrumb-separator";
+      breadcrumb.appendChild(sep);
+    }
   });
 }
 
-// --- Render Editor ---
+// ========== Editor principal ==========
 function renderEditor() {
   const page = currentPage();
   el("#pageTitle").value = page.title;
+  renderBreadcrumb();
 
   const editor = el("#editor");
   editor.innerHTML = "";
 
-  if (!page.blocks.length) {
-    addBlock("paragraph", "", null, true);
+  if (page.blocks.length === 0) {
+    page.blocks.push({ id: crypto.randomUUID(), type: "paragraph", text: "" });
+    save();
   }
 
   page.blocks.forEach((b, idx) => {
     const blockEl = document.createElement("div");
     blockEl.className = "block";
-    blockEl.dataset.type = b.type;
     blockEl.dataset.id = b.id;
-    blockEl.draggable = true;
+    blockEl.dataset.type = b.type;
 
-    // Drag & Drop
-    blockEl.addEventListener("dragstart", (e)=>{ blockEl.classList.add("dragging"); e.dataTransfer.setData("text/plain", b.id); });
-    blockEl.addEventListener("dragend", ()=> blockEl.classList.remove("dragging"));
-    blockEl.addEventListener("dragover", (e)=>{ e.preventDefault(); const after = getDragAfterElement(editor, e.clientY); const dragging = el(".block.dragging"); if (after == null) editor.appendChild(dragging); else editor.insertBefore(dragging, after); });
-    blockEl.addEventListener("drop", (e)=>{
+    // Handle mover
+    const controls = document.createElement("div");
+    controls.className = "block-controls";
+    controls.innerHTML = `<button class="move" title="Mover"><i data-lucide="move"></i></button>`;
+    const moveBtn = controls.querySelector(".move");
+
+    let allowDrag = false;
+    moveBtn.addEventListener("mousedown", (e) => {
       e.preventDefault();
-      const draggedId = e.dataTransfer.getData("text/plain");
-      reorderBlock(draggedId, b.id);
+      allowDrag = true;
+      blockEl.setAttribute("draggable", "true");
     });
+    document.addEventListener("mouseup", () => {
+      allowDrag = false;
+      blockEl.removeAttribute("draggable");
+    }, { once: true });
 
-    // Content
-    let content;
-    if (b.type === "todo") {
-      const check = document.createElement("input");
-      check.type = "checkbox";
-      check.className = "todo-check";
-      check.checked = !!b.checked;
-      check.addEventListener("change", ()=>{
-        b.checked = check.checked; blockEl.classList.toggle("done", b.checked); save();
-      });
-      blockEl.appendChild(check);
-      content = document.createElement("div");
-    } else if (b.type === "bulleted") {
-      const bullet = document.createElement("div");
-      bullet.className = "bullet";
-      bullet.textContent = "•";
-      blockEl.appendChild(bullet);
-      content = document.createElement("div");
-    } else {
-      content = document.createElement("div");
-    }
+    blockEl.addEventListener("dragstart", (e) => {
+      if (!allowDrag) return e.preventDefault();
+      e.dataTransfer.setData("text/plain", b.id);
+      blockEl.classList.add("dragging");
+    });
+    blockEl.addEventListener("dragend", () => blockEl.classList.remove("dragging"));
+
+    blockEl.appendChild(controls);
+
+    // Contenido editable
+    const content = document.createElement("div");
     content.className = "block-content";
     content.contentEditable = "true";
-    content.spellcheck = false;
-    content.innerText = b.text || "";
+    content.innerText = b.text;
 
-    // Eventos de edición
-    content.addEventListener("input", (e)=> {
+    // Estilos por tipo
+    if (b.type === "h1") {
+      content.style.fontSize = "28px";
+      content.style.fontWeight = "800";
+    } else if (b.type === "h2") {
+      content.style.fontSize = "22px";
+      content.style.fontWeight = "700";
+    } else if (b.type === "quote") {
+      content.style.borderLeft = "3px solid var(--accent)";
+      content.style.paddingLeft = "10px";
+      content.style.fontStyle = "italic";
+      content.style.opacity = ".8";
+    } else if (b.type === "code") {
+      content.style.fontFamily = "monospace";
+      content.style.background = "#0e1220";
+      content.style.border = "1px solid #1f2538";
+      content.style.padding = "10px";
+      content.style.borderRadius = "6px";
+      content.style.whiteSpace = "pre-wrap";
+    }
+
+    // Eventos
+    content.addEventListener("input", () => {
       b.text = content.innerText;
-      // Slash menu: si contiene "/" al final, mostrar opciones
-      handleSlashDetection(content, b);
+      if (b.text.includes("/")) showSlashMenu(b, blockEl);
+      else hideSlashMenu();
       save();
     });
-
-    content.addEventListener("keydown", (e)=> {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const nb = addBlock(b.type, "", b.id, true);
-        focusBlock(nb.id);
-      } else if (e.key === "Backspace" && content.innerText === "") {
-        e.preventDefault();
-        removeBlock(b.id, idx);
-      } else if (e.key === "ArrowUp" && getCaretPos(content) === 0) {
-        e.preventDefault(); focusPrevBlock(b.id);
-      } else if (e.key === "ArrowDown" && getCaretPos(content) === content.innerText.length) {
-        e.preventDefault(); focusNextBlock(b.id);
-      }
-    });
+    content.addEventListener("keydown", (e) => handleKeyNav(e, b, idx, page));
 
     blockEl.appendChild(content);
-    if (b.type === "todo") blockEl.classList.toggle("done", !!b.checked);
     editor.appendChild(blockEl);
   });
 
-  // Click fuera cierra slash
-  document.addEventListener("click", (e)=>{
-    if (!el("#slashMenu").contains(e.target)) hideSlash();
-  }, { once:true });
+  // Dragover / Drop
+  editor.ondragover = (e) => {
+    e.preventDefault();
+    const after = getDragAfterElement(editor, e.clientY);
+    const dragging = editor.querySelector(".block.dragging");
+    if (!dragging) return;
+    if (after == null) editor.appendChild(dragging);
+    else editor.insertBefore(dragging, after);
+  };
+  editor.ondrop = (e) => {
+    e.preventDefault();
+    const orderIds = els(".block", editor).map(n => n.dataset.id);
+    const page = currentPage();
+    page.blocks.sort((a, b) => orderIds.indexOf(a.id) - orderIds.indexOf(b.id));
+    save();
+  };
+
+  lucide.createIcons();
 }
 
+// ========== Utilidades ==========
 function getDragAfterElement(container, y) {
-  const draggableElements = [...container.querySelectorAll(".block:not(.dragging)")];
-  return draggableElements.reduce((closest, child) => {
+  const els = [...container.querySelectorAll(".block:not(.dragging)")];
+  return els.reduce((closest, child) => {
     const box = child.getBoundingClientRect();
     const offset = y - box.top - box.height / 2;
     if (offset < 0 && offset > closest.offset) return { offset, element: child };
-    else return closest;
-  }, { offset: Number.NEGATIVE_INFINITY }).element;
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+function getCaretPosition(elm) {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return 0;
+  const range = selection.getRangeAt(0);
+  const pre = range.cloneRange();
+  pre.selectNodeContents(elm);
+  pre.setEnd(range.endContainer, range.endOffset);
+  return pre.toString().length;
 }
 
-function reorderBlock(draggedId, targetId) {
-  const page = currentPage();
-  const from = page.blocks.findIndex(b => b.id === draggedId);
-  const to = page.blocks.findIndex(b => b.id === targetId);
-  if (from === -1 || to === -1) return;
-  const [item] = page.blocks.splice(from,1);
-  const newIndex = page.blocks.findIndex(b => b.id === targetId);
-  page.blocks.splice(newIndex, 0, item);
-  save(); renderEditor();
-}
+// ========== Navegación con teclado ==========
+function handleKeyNav(e, b, idx, page) {
+  const editor = el("#editor");
+  const content = e.target;
+  const text = content.innerText.trim();
 
-function addBlock(type="paragraph", text="", afterId=null, renderNow=false) {
-  const page = currentPage();
-  const idx = afterId ? page.blocks.findIndex(b => b.id === afterId) + 1 : page.blocks.length;
-  const block = { id: crypto.randomUUID(), type, text };
-  if (type === "todo") block.checked = false;
-  page.blocks.splice(idx, 0, block);
-  save();
-  if (renderNow) renderEditor();
-  return block;
-}
-
-function removeBlock(id, indexHint) {
-  const page = currentPage();
-  const idx = indexHint ?? page.blocks.findIndex(b => b.id === id);
-  if (idx < 0) return;
-  page.blocks.splice(idx,1);
-  save(); renderEditor();
-  const next = page.blocks[idx] || page.blocks[idx-1];
-  if (next) focusBlock(next.id, true);
-}
-
-function focusBlock(id, end=false) {
-  const block = el(`.block[data-id="${id}"] .block-content`);
-  if (!block) return;
-  block.focus();
-  placeCaret(block, end ? block.innerText.length : 0);
-}
-function focusPrevBlock(id) {
-  const blocks = els(".block");
-  const i = blocks.findIndex(b => b.dataset.id === id);
-  const prev = blocks[i-1]; if (prev) prev.querySelector(".block-content").focus();
-}
-function focusNextBlock(id) {
-  const blocks = els(".block");
-  const i = blocks.findIndex(b => b.dataset.id === id);
-  const next = blocks[i+1]; if (next) next.querySelector(".block-content").focus();
-}
-function getCaretPos(elm) {
-  const sel = window.getSelection();
-  if (!sel.rangeCount) return 0;
-  const range = sel.getRangeAt(0);
-  const preRange = range.cloneRange();
-  preRange.selectNodeContents(elm);
-  preRange.setEnd(range.endContainer, range.endOffset);
-  return preRange.toString().length;
-}
-function placeCaret(elm, pos) {
-  const range = document.createRange(); const sel = window.getSelection();
-  range.selectNodeContents(elm);
-  range.collapse(true);
-  const walker = document.createTreeWalker(elm, NodeFilter.SHOW_TEXT);
-  let count = 0, node;
-  while ((node = walker.nextNode())) {
-    const nextCount = count + node.textContent.length;
-    if (pos <= nextCount) {
-      range.setStart(node, pos - count);
-      range.setEnd(node, pos - count);
-      break;
+  if (e.altKey && e.key === "ArrowUp") {
+    e.preventDefault();
+    if (idx > 0) {
+      const temp = page.blocks[idx - 1];
+      page.blocks[idx - 1] = page.blocks[idx];
+      page.blocks[idx] = temp;
+      save(); renderEditor();
+      el(`.block[data-id="${b.id}"] .block-content`)?.focus();
     }
-    count = nextCount;
   }
-  sel.removeAllRanges(); sel.addRange(range);
+  if (e.altKey && e.key === "ArrowDown") {
+    e.preventDefault();
+    if (idx < page.blocks.length - 1) {
+      const temp = page.blocks[idx + 1];
+      page.blocks[idx + 1] = page.blocks[idx];
+      page.blocks[idx] = temp;
+      save(); renderEditor();
+      el(`.block[data-id="${b.id}"] .block-content`)?.focus();
+    }
+  }
+
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const newBlock = { id: crypto.randomUUID(), type: "paragraph", text: "" };
+    page.blocks.splice(idx + 1, 0, newBlock);
+    save(); renderEditor();
+    el(`.block[data-id="${newBlock.id}"] .block-content`)?.focus();
+  }
+
+  if (e.key === "Backspace" && text === "") {
+    e.preventDefault();
+    page.blocks.splice(idx, 1);
+    save(); renderEditor();
+    const prev = editor.children[idx - 1];
+    if (prev) prev.querySelector(".block-content").focus();
+  }
 }
 
-// --- Slash menu ---
-let slashCtx = { blockId: null };
-function handleSlashDetection(contentEl, block) {
-  const text = contentEl.innerText;
-  const slashIndex = text.lastIndexOf("/");
-  if (slashIndex === -1) { hideSlash(); return; }
-  const rect = contentEl.getBoundingClientRect();
+// ========== Slash Menu con navegación ==========
+let slashCtx = { block: null, activeIndex: 0 };
+let slashKeyHandler = null;
+
+function showSlashMenu(block, anchor) {
+  slashCtx.block = block;
   const menu = el("#slashMenu");
-  menu.style.top = rect.bottom + 6 + "px";
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = rect.bottom + "px";
   menu.style.left = rect.left + "px";
   menu.classList.remove("hidden");
-  menu.setAttribute("aria-hidden", "false");
-  slashCtx.blockId = block.id;
+  const options = els("#slashMenu > div");
+  slashCtx.activeIndex = 0;
+  updateSlashActive(options);
 
-  els("#slashMenu > div").forEach((opt)=>{
-    opt.onclick = ()=> {
-      pickType(opt.dataset.type);
-    };
+  options.forEach((opt) => {
+    opt.onclick = () => pickType(opt.dataset.type);
   });
+
+  slashKeyHandler = (e) => {
+    if (menu.classList.contains("hidden")) return;
+    if (["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) e.preventDefault();
+    if (e.key === "ArrowDown") {
+      slashCtx.activeIndex = (slashCtx.activeIndex + 1) % options.length;
+      updateSlashActive(options);
+    } else if (e.key === "ArrowUp") {
+      slashCtx.activeIndex = (slashCtx.activeIndex - 1 + options.length) % options.length;
+      updateSlashActive(options);
+    } else if (e.key === "Enter") {
+      const opt = options[slashCtx.activeIndex];
+      pickType(opt.dataset.type);
+    } else if (e.key === "Escape") {
+      hideSlashMenu();
+    }
+  };
+  document.addEventListener("keydown", slashKeyHandler);
+}
+function updateSlashActive(options) {
+  options.forEach((o, i) => o.classList.toggle("active", i === slashCtx.activeIndex));
 }
 function pickType(type) {
   const page = currentPage();
-  const b = page.blocks.find(x => x.id === slashCtx.blockId);
-  if (!b) return hideSlash();
+  const b = slashCtx.block;
+  if (!b) return hideSlashMenu();
   b.type = type;
-  // limpia la barra "/" sobrante al cambiar
   b.text = (b.text || "").replace("/", "");
-  save(); renderEditor(); focusBlock(b.id, true); hideSlash();
+  save(); renderEditor();
+  el(`.block[data-id="${b.id}"] .block-content`)?.focus();
+  hideSlashMenu();
 }
-function hideSlash() {
+function hideSlashMenu() {
   const menu = el("#slashMenu");
   menu.classList.add("hidden");
-  menu.setAttribute("aria-hidden", "true");
-  slashCtx.blockId = null;
+  slashCtx.block = null;
+  if (slashKeyHandler) {
+    document.removeEventListener("keydown", slashKeyHandler);
+    slashKeyHandler = null;
+  }
 }
 
-// --- Export / Import ---
-function exportJSON() {
-  const data = JSON.stringify(state, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = "notion-lite-export.json";
-  a.click(); URL.revokeObjectURL(url);
-}
-function importJSON(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const imported = JSON.parse(reader.result);
-      if (!imported.pages || !imported.currentPageId) throw new Error("Formato inválido");
-      Object.assign(state, imported);
-      save(); render();
-    } catch (e) {
-      alert("No se pudo importar el JSON");
-      console.error(e);
+// ========== Eventos globales ==========
+function bindUI() {
+  el("#addPageBtn").onclick = () => {
+    const id = crypto.randomUUID();
+    state.pages.unshift({ id, title: "Nueva página", parentId: null, blocks: [] });
+    state.currentPageId = id;
+    save(); render();
+    const titleInput = el("#pageTitle");
+    if (titleInput) {
+      titleInput.focus();
+      if (titleInput.select) titleInput.select();
+      else if (titleInput.setSelectionRange) titleInput.setSelectionRange(0, titleInput.value.length);
     }
   };
-  reader.readAsText(file);
+  el("#newBlockBtn").onclick = () => {
+    const page = currentPage();
+    page.blocks.push({ id: crypto.randomUUID(), type: "paragraph", text: "" });
+    save(); renderEditor();
+  };
+  el("#pageTitle").oninput = (e) => {
+    const page = currentPage();
+    page.title = e.target.value;
+    save(); renderSidebar();
+    renderBreadcrumb();
+  };
 }
 
-// --- App init & eventos ---
-function render() { renderSidebar(); renderEditor(); }
-function bindUI() {
-  el("#addPageBtn").addEventListener("click", addPage);
-  el("#exportBtn").addEventListener("click", exportJSON);
-  el("#importInput").addEventListener("change", (e)=>{
-    const f = e.target.files?.[0]; if (f) importJSON(f);
-    e.target.value = "";
-  });
-  el("#newBlockBtn").addEventListener("click", ()=>{
-    const b = addBlock("paragraph", "", null, true);
-    focusBlock(b.id);
-  });
-  el("#pageTitle").addEventListener("input", (e)=>{
-    const page = currentPage(); page.title = e.target.value || "Sin título"; save();
-    renderSidebar();
-  });
-}
-
-load(); bindUI(); render();
+// ========== Inicialización ==========
+load();
+bindUI();
+render();
