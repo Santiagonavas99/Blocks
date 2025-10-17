@@ -216,12 +216,13 @@ html, body {
   align-items: flex-start;
 }
 
-/* Contador de línea */
+
+/* Contador de línea (gutter clickeable para drag) */
 .block::before {
   counter-increment: line;
   content: counter(line);
   flex-shrink: 0;
-  width: 40px;
+  width: 48px;               /* un pelín más ancho para acertar el click */
   text-align: right;
   padding-right: 10px;
   color: var(--vscode-muted);
@@ -229,8 +230,15 @@ html, body {
   line-height: 1.6;
   opacity: 0.6;
   user-select: none;
-  pointer-events: none;
+  /* IMPORTANTE: permitir que el click "llegue" al bloque y usar cursor de drag */
+  pointer-events: auto;
+  cursor: grab;
   transform: translateY(2px);
+}
+
+/* Mientras estás arrastrando */
+.block.dragging::before {
+  cursor: grabbing;
 }
 
 /* Centrar verticalmente el número si el bloque tiene solo una línea visible */
@@ -243,8 +251,8 @@ html, body {
 /* Ajuste del texto dentro de los bloques */
 .block-content {
   outline: none;
-  min-height: 28px;
-  padding: 6px;
+  min-height: 20px;
+  padding: 4px 6px;
   border-radius: 4px;
   line-height: 1.6;
   word-break: break-word;
@@ -513,9 +521,23 @@ html, body {
   display: flex;
   align-items: center;
   gap: 10px;
-  cursor: pointer;
-  user-select: none;
+  cursor: text;
+  user-select: text;
 }
+
+/* Make todo blocks more compact: reduce outer margins and vertical padding */
+.block[data-type="todo"] {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.block[data-type="todo"] .block-content {
+  padding: 6px 8px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+.todo-item { gap: 12px; }
+.todo-text { line-height: 1.2; }
 
 .todo-item input[type="checkbox"] {
   appearance: none;
@@ -559,6 +581,12 @@ html, body {
   opacity: 0.6;
   transform: scale(.995);
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+/* Selected block visual */
+.block.selected {
+  box-shadow: 0 0 0 2px rgba(0,122,204,0.12);
+  background: rgba(0,122,204,0.03);
 }
 
 /* Mejor estilo para checkbox (todo) */

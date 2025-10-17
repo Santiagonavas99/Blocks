@@ -189,113 +189,137 @@ function renderEditor() {
     blockEl.dataset.id = b.id;
     blockEl.dataset.type = b.type;
 
-    // Handle mover
+    // allow programmatic selection visual
+    blockEl.classList.remove('selected');
+
+    // Controls (mover)
     const controls = document.createElement("div");
     controls.className = "block-controls";
     controls.innerHTML = `<button class="move" title="Mover"><i data-lucide="move"></i></button>`;
     const moveBtn = controls.querySelector(".move");
 
-    // NOTE: native drag handlers removed — we use a custom drag system below
-    // ensure the move button doesn't trigger default focus/actions
+    // start drag on mousedown of the move button
     moveBtn.addEventListener("mousedown", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      // actual drag start is handled by the centralized drag system below
+      draggedBlock = blockEl;
+      draggedBlock.classList.add("dragging");
+      if (!dropIndicator) dropIndicator = createDropIndicator();
     });
 
     blockEl.appendChild(controls);
 
-    // Contenido editable
+    // Contenido editable por defecto
     const content = document.createElement("div");
     content.className = "block-content";
     content.contentEditable = "true";
-    content.innerText = b.text;
+    content.innerText = b.text || "";
 
     // Estilos y comportamientos por tipo
-switch (b.type) {
-  case "h1":
-    content.style.fontSize = "28px";
-    content.style.fontWeight = "800";
-    break;
-  case "h2":
-    content.style.fontSize = "22px";
-    content.style.fontWeight = "700";
-    break;
-  case "quote":
-    content.style.borderLeft = "3px solid var(--accent)";
-    content.style.paddingLeft = "10px";
-    content.style.fontStyle = "italic";
-    content.style.opacity = ".8";
-    break;
-  case "code":
-    content.style.fontFamily = "monospace";
-    content.style.background = "#0e1220";
-    content.style.border = "1px solid #1f2538";
-    content.style.padding = "10px";
-    content.style.borderRadius = "6px";
-    content.style.whiteSpace = "pre-wrap";
-    break;
-  case "link":
-    content.style.color = "var(--vscode-accent)";
-    content.style.cursor = "pointer";
-    content.style.textDecoration = "underline";
-    content.contentEditable = "false";
-    content.innerText = b.text || "→ Página sin título";
-    content.addEventListener("click", () => {
-      if (b.pageId) {
-        state.currentPageId = b.pageId;
+    switch (b.type) {
+      case "h1":
+        content.style.fontSize = "28px";
+        content.style.fontWeight = "800";
+        break;
+      case "h2":
+        content.style.fontSize = "22px";
+        content.style.fontWeight = "700";
+        break;
+      case "quote":
+        content.style.borderLeft = "3px solid var(--accent)";
+        content.style.paddingLeft = "10px";
+        content.style.fontStyle = "italic";
+        content.style.opacity = ".8";
+        break;
+      case "code":
+        content.style.fontFamily = "monospace";
+        content.style.background = "#0e1220";
+        content.style.border = "1px solid #1f2538";
+        content.style.padding = "10px";
+        content.style.borderRadius = "6px";
+        content.style.whiteSpace = "pre-wrap";
+        break;
+      case "link":
+        content.style.color = "var(--vscode-accent)";
+        content.style.cursor = "pointer";
+        content.style.textDecoration = "underline";
+        content.contentEditable = "false";
+        content.innerText = b.text || "→ Página sin título";
+        content.addEventListener("click", () => {
+          if (b.pageId) {
+            state.currentPageId = b.pageId;
+            save();
+            render();
+          }
+        });
+        break;
+      case "todo":
+        // Use a non-label structure so clicks inside the editable span don't toggle the checkbox
+        content.innerHTML = `
+          <div class="todo-item">
+            <input type="checkbox" ${b.checked ? "checked" : ""} />
+            <span class="todo-text" contenteditable="true">${b.text || ""}</span>
+          </div>
+        `;
+        content.contentEditable = false;
+
+        const checkbox = content.querySelector("input");
+        const textEl = content.querySelector(".todo-text");
+
+        checkbox.addEventListener('change', () => {
+          b.checked = checkbox.checked;
+          save();
+        });
+
+        textEl.addEventListener('input', () => {
+          b.text = textEl.innerText;
+          save();
+        });
+
+        // Prevent clicks on the text from bubbling (so they don't toggle checkbox / start drag)
+        textEl.addEventListener('mousedown', (ev) => ev.stopPropagation());
+        textEl.addEventListener('click', (ev) => ev.stopPropagation());
+
+        // Enter -> nueva tarea debajo
+        textEl.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            const newBlock = { id: crypto.randomUUID(), type: "todo", text: "" };
+            const idxInPage = currentPage().blocks.findIndex(x => x.id === b.id);
+            currentPage().blocks.splice(idxInPage + 1, 0, newBlock);
+            save(); renderEditor();
+            // focus the new todo text
+            el(`.block[data-id="${newBlock.id}"] .todo-text`)?.focus();
+          }
+        });
+        break;
+    }
+
+    // Eventos para contenido editable (no link, no todo)
+    if (content.isContentEditable) {
+      content.addEventListener("input", () => {
+        b.text = content.innerText;
+        if (b.text.includes("/")) showSlashMenu(b, blockEl);
+        else hideSlashMenu();
         save();
-        render();
-      }
+      });
+      content.addEventListener("keydown", (e) => handleKeyNav(e, b, idx, page));
+    }
+    // When user clicks the block (outside editable children) or focuses content, mark it selected
+    blockEl.addEventListener('click', (ev) => {
+      // only mark when click is not inside interactive children (we stopPropagation where needed)
+      document.querySelectorAll('.block.selected').forEach(n => n.classList.remove('selected'));
+      blockEl.classList.add('selected');
     });
-    break;
-  case "todo":
-  content.innerHTML = `
-    <label class="todo-item">
-      <input type="checkbox" ${b.checked ? "checked" : ""}>
-      <span class="todo-text" contenteditable="true">${b.text}</span>
-    </label>
-  `;
-  content.contentEditable = false;
-
-  const checkbox = content.querySelector("input");
-  const textEl = content.querySelector(".todo-text");
-
-  checkbox.onchange = () => {
-    b.checked = checkbox.checked;
-    save();
-  };
-  textEl.oninput = () => {
-    b.text = textEl.innerText;
-    save();
-  };
-  break;
-}
-
-    // Eventos
-    content.addEventListener("input", () => {
-      b.text = content.innerText;
-      if (b.text.includes("/")) showSlashMenu(b, blockEl);
-      else hideSlashMenu();
-      save();
+    // Focus on content should also select the block
+    content.addEventListener('focus', () => {
+      document.querySelectorAll('.block.selected').forEach(n => n.classList.remove('selected'));
+      blockEl.classList.add('selected');
     });
-    content.addEventListener("keydown", (e) => handleKeyNav(e, b, idx, page));
 
     blockEl.appendChild(content);
     editor.appendChild(blockEl);
   });
-
-  if (b.type === "link") {
-  content.style.color = "var(--vscode-accent)";
-  content.style.cursor = "pointer";
-  content.style.textDecoration = "underline";
-  content.contentEditable = "false";
-  content.onclick = () => {
-    state.currentPageId = b.pageId;
-    save();
-    render();
-  };
-}
 
 // ========== NUEVO SISTEMA DE DRAG & DROP (mejorado) ==========
 let draggedBlock = null;
@@ -307,17 +331,22 @@ function createDropIndicator() {
   return d;
 }
 
-// start drag when mousedown on move button
-editor.querySelectorAll('.block').forEach(blockEl => {
-  const moveBtn = blockEl.querySelector('.move');
-  moveBtn.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    draggedBlock = blockEl;
-    draggedBlock.classList.add('dragging');
-    // create indicator if needed
-    if (!dropIndicator) dropIndicator = createDropIndicator();
-  });
+// Global key handler: Delete key removes the selected block
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Delete') return;
+  const sel = el('.block.selected');
+  if (!sel) return;
+  e.preventDefault();
+  const id = sel.dataset.id;
+  const page = currentPage();
+  const idx = page.blocks.findIndex(b => b.id === id);
+  if (idx === -1) return;
+  page.blocks.splice(idx, 1);
+  save();
+  renderEditor();
+  // focus next block content if exists, else previous
+  const nextBlock = el(`.block[data-id="${page.blocks[idx] ? page.blocks[idx].id : (page.blocks[idx-1] ? page.blocks[idx-1].id : '')}"] .block-content`);
+  if (nextBlock) nextBlock.focus();
 });
 
 // move handler: show where the block will be dropped
