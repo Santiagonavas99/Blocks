@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notion Lite — Starter</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <div class="brand">Notion Lite</div>
+        <div class="sidebar-actions">
+          <button id="addPageBtn" title="Nueva página">＋ Nueva página</button>
+        </div>
+        <nav id="pages"></nav>
+        <div class="sidebar-footer">
+          <button id="exportBtn" title="Exportar JSON">Exportar</button>
+          <label class="import-label" title="Importar JSON">
+            Importar <input id="importInput" type="file" accept="application/json" hidden />
+          </label>
+        </div>
+      </aside>
+
+      <main id="main">
+        <header id="topbar">
+          <input id="pageTitle" placeholder="Sin título" />
+          <div class="topbar-actions">
+            <button id="newBlockBtn" title="Nuevo bloque (Enter)">＋ Bloque</button>
+          </div>
+        </header>
+
+        <section id="editor" aria-label="Editor de bloques">
+          <!-- Bloques se renderizan aquí -->
+        </section>
+      </main>
+    </div>
+
+    <!-- Menú de slash (tipos de bloque) -->
+    <div id="slashMenu" class="slash-menu hidden" role="menu" aria-hidden="true">
+      <div data-type="paragraph">Párrafo</div>
+      <div data-type="h1">Encabezado H1</div>
+      <div data-type="h2">Encabezado H2</div>
+      <div data-type="bulleted">Lista con viñetas</div>
+      <div data-type="todo">Tarea</div>
+      <div data-type="quote">Cita</div>
+      <div data-type="code">Código</div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
