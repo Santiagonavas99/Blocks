@@ -195,23 +195,13 @@ function renderEditor() {
     controls.innerHTML = `<button class="move" title="Mover"><i data-lucide="move"></i></button>`;
     const moveBtn = controls.querySelector(".move");
 
-    let allowDrag = false;
-    moveBtn.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      allowDrag = true;
-      blockEl.setAttribute("draggable", "true");
+    // NOTE: native drag handlers removed — we use a custom drag system below
+    // ensure the move button doesn't trigger default focus/actions
+    moveBtn.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      // actual drag start is handled by the centralized drag system below
     });
-    document.addEventListener("mouseup", () => {
-      allowDrag = false;
-      blockEl.removeAttribute("draggable");
-    }, { once: true });
-
-    blockEl.addEventListener("dragstart", (e) => {
-      if (!allowDrag) return e.preventDefault();
-      e.dataTransfer.setData("text/plain", b.id);
-      blockEl.classList.add("dragging");
-    });
-    blockEl.addEventListener("dragend", () => blockEl.classList.remove("dragging"));
 
     blockEl.appendChild(controls);
 
@@ -221,26 +211,66 @@ function renderEditor() {
     content.contentEditable = "true";
     content.innerText = b.text;
 
-    // Estilos por tipo
-    if (b.type === "h1") {
-      content.style.fontSize = "28px";
-      content.style.fontWeight = "800";
-    } else if (b.type === "h2") {
-      content.style.fontSize = "22px";
-      content.style.fontWeight = "700";
-    } else if (b.type === "quote") {
-      content.style.borderLeft = "3px solid var(--accent)";
-      content.style.paddingLeft = "10px";
-      content.style.fontStyle = "italic";
-      content.style.opacity = ".8";
-    } else if (b.type === "code") {
-      content.style.fontFamily = "monospace";
-      content.style.background = "#0e1220";
-      content.style.border = "1px solid #1f2538";
-      content.style.padding = "10px";
-      content.style.borderRadius = "6px";
-      content.style.whiteSpace = "pre-wrap";
-    }
+    // Estilos y comportamientos por tipo
+switch (b.type) {
+  case "h1":
+    content.style.fontSize = "28px";
+    content.style.fontWeight = "800";
+    break;
+  case "h2":
+    content.style.fontSize = "22px";
+    content.style.fontWeight = "700";
+    break;
+  case "quote":
+    content.style.borderLeft = "3px solid var(--accent)";
+    content.style.paddingLeft = "10px";
+    content.style.fontStyle = "italic";
+    content.style.opacity = ".8";
+    break;
+  case "code":
+    content.style.fontFamily = "monospace";
+    content.style.background = "#0e1220";
+    content.style.border = "1px solid #1f2538";
+    content.style.padding = "10px";
+    content.style.borderRadius = "6px";
+    content.style.whiteSpace = "pre-wrap";
+    break;
+  case "link":
+    content.style.color = "var(--vscode-accent)";
+    content.style.cursor = "pointer";
+    content.style.textDecoration = "underline";
+    content.contentEditable = "false";
+    content.innerText = b.text || "→ Página sin título";
+    content.addEventListener("click", () => {
+      if (b.pageId) {
+        state.currentPageId = b.pageId;
+        save();
+        render();
+      }
+    });
+    break;
+  case "todo":
+  content.innerHTML = `
+    <label class="todo-item">
+      <input type="checkbox" ${b.checked ? "checked" : ""}>
+      <span class="todo-text" contenteditable="true">${b.text}</span>
+    </label>
+  `;
+  content.contentEditable = false;
+
+  const checkbox = content.querySelector("input");
+  const textEl = content.querySelector(".todo-text");
+
+  checkbox.onchange = () => {
+    b.checked = checkbox.checked;
+    save();
+  };
+  textEl.oninput = () => {
+    b.text = textEl.innerText;
+    save();
+  };
+  break;
+}
 
     // Eventos
     content.addEventListener("input", () => {
@@ -255,22 +285,68 @@ function renderEditor() {
     editor.appendChild(blockEl);
   });
 
-  // Dragover / Drop
-  editor.ondragover = (e) => {
-    e.preventDefault();
-    const after = getDragAfterElement(editor, e.clientY);
-    const dragging = editor.querySelector(".block.dragging");
-    if (!dragging) return;
-    if (after == null) editor.appendChild(dragging);
-    else editor.insertBefore(dragging, after);
-  };
-  editor.ondrop = (e) => {
-    e.preventDefault();
-    const orderIds = els(".block", editor).map(n => n.dataset.id);
-    const page = currentPage();
-    page.blocks.sort((a, b) => orderIds.indexOf(a.id) - orderIds.indexOf(b.id));
+  if (b.type === "link") {
+  content.style.color = "var(--vscode-accent)";
+  content.style.cursor = "pointer";
+  content.style.textDecoration = "underline";
+  content.contentEditable = "false";
+  content.onclick = () => {
+    state.currentPageId = b.pageId;
     save();
+    render();
   };
+}
+
+// ========== NUEVO SISTEMA DE DRAG & DROP (mejorado) ==========
+let draggedBlock = null;
+let dropIndicator = null;
+
+function createDropIndicator() {
+  const d = document.createElement('div');
+  d.className = 'drop-indicator';
+  return d;
+}
+
+// start drag when mousedown on move button
+editor.querySelectorAll('.block').forEach(blockEl => {
+  const moveBtn = blockEl.querySelector('.move');
+  moveBtn.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    draggedBlock = blockEl;
+    draggedBlock.classList.add('dragging');
+    // create indicator if needed
+    if (!dropIndicator) dropIndicator = createDropIndicator();
+  });
+});
+
+// move handler: show where the block will be dropped
+editor.addEventListener('mousemove', (e) => {
+  if (!draggedBlock) return;
+  const after = getDragAfterElement(editor, e.clientY);
+  // remove existing indicator
+  if (dropIndicator && dropIndicator.parentElement) dropIndicator.parentElement.removeChild(dropIndicator);
+  if (after == null) editor.appendChild(dropIndicator);
+  else editor.insertBefore(dropIndicator, after);
+});
+
+// end drag: insert draggedBlock where indicator is, then cleanup + persist order
+document.addEventListener('mouseup', (e) => {
+  if (!draggedBlock) return;
+  // if indicator present, insert before it; otherwise do nothing
+  if (dropIndicator && dropIndicator.parentElement) {
+    dropIndicator.parentElement.insertBefore(draggedBlock, dropIndicator);
+    dropIndicator.parentElement.removeChild(dropIndicator);
+  }
+  // persist new order
+  const orderIds = els('.block', editor).map(n => n.dataset.id);
+  const page = currentPage();
+  page.blocks.sort((a, b) => orderIds.indexOf(a.id) - orderIds.indexOf(b.id));
+  save();
+  draggedBlock.classList.remove('dragging');
+  draggedBlock = null;
+  dropIndicator = null;
+});
 
   lucide.createIcons();
 }
@@ -383,12 +459,39 @@ function pickType(type) {
   const page = currentPage();
   const b = slashCtx.block;
   if (!b) return hideSlashMenu();
+
+  if (type === "page") {
+    const id = crypto.randomUUID();
+    const newPage = {
+      id,
+      title: b.text.replace("/", "").trim() || "Nueva página",
+      parentId: page.id,
+      blocks: [
+        { id: crypto.randomUUID(), type: "paragraph", text: "" }
+      ]
+    };
+    state.pages.push(newPage);
+
+    // reemplazar el bloque por un link a la nueva página
+    b.type = "link";
+    b.text = `→ ${newPage.title}`;
+    b.pageId = id;
+
+    save();
+    renderSidebar();
+    renderEditor();
+    return hideSlashMenu();
+  }
+
+  // comportamiento existente
   b.type = type;
   b.text = (b.text || "").replace("/", "");
-  save(); renderEditor();
+  save();
+  renderEditor();
   el(`.block[data-id="${b.id}"] .block-content`)?.focus();
   hideSlashMenu();
 }
+
 function hideSlashMenu() {
   const menu = el("#slashMenu");
   menu.classList.add("hidden");
