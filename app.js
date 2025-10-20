@@ -21,7 +21,11 @@ function load() {
         parentId: null,
         blocks: [
           { id: crypto.randomUUID(), type: "h1", text: "Bienvenido a Notion Lite 👋" },
-          { id: crypto.randomUUID(), type: "paragraph", text: "Usa Alt + ↑ o ↓ para mover bloques. Crea subpáginas desde la barra lateral." },
+          {
+            id: crypto.randomUUID(),
+            type: "paragraph",
+            text: "Usa Alt + ↑ o ↓ para mover bloques. Crea subpáginas desde la barra lateral.",
+          },
         ],
       },
     ];
@@ -33,7 +37,7 @@ function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 function currentPage() {
-  return state.pages.find(p => p.id === state.currentPageId);
+  return state.pages.find((p) => p.id === state.currentPageId);
 }
 
 // ========== Sidebar limpio ==========
@@ -41,8 +45,8 @@ function renderSidebar() {
   const nav = el("#pages");
   nav.innerHTML = "";
 
-  const rootPages = state.pages.filter(p => !p.parentId);
-  rootPages.forEach(p => renderPageTree(p, nav, 0));
+  const rootPages = state.pages.filter((p) => !p.parentId);
+  rootPages.forEach((p) => renderPageTree(p, nav, 0));
 
   lucide.createIcons();
 }
@@ -55,14 +59,14 @@ function render() {
 
 function renderPageTree(page, container, depth) {
   const item = document.createElement("div");
-  item.className = "page-item" + (page.id === state.currentPageId ? " active" : "");
+  item.className =
+    "page-item" + (page.id === state.currentPageId ? " active" : "");
   item.style.paddingLeft = `${depth * 16 + 10}px`;
   item.style.position = "relative";
   item.style.display = "flex";
   item.style.alignItems = "center";
   item.style.justifyContent = "space-between";
 
-  // --- título de página ---
   const span = document.createElement("span");
   span.textContent = page.title;
   span.className = "page-title";
@@ -73,7 +77,6 @@ function renderPageTree(page, container, depth) {
     render();
   };
 
-  // --- botón para crear subpágina ---
   const addSub = document.createElement("button");
   addSub.className = "add-subpage";
   addSub.innerHTML = '<i data-lucide="plus"></i>';
@@ -81,57 +84,64 @@ function renderPageTree(page, container, depth) {
   addSub.onclick = (e) => {
     e.stopPropagation();
     const id = crypto.randomUUID();
-    state.pages.push({ id, title: "Nueva subpágina", parentId: page.id, blocks: [] });
-    state.currentPageId = id; // navegar a la subpágina nueva
+    state.pages.push({
+      id,
+      title: "Nueva subpágina",
+      parentId: page.id,
+      blocks: [],
+    });
+    state.currentPageId = id;
     save();
     render();
-    // mejorar UX: enfocar y seleccionar el título de la nueva página
     const titleInput = el("#pageTitle");
     if (titleInput) {
       titleInput.focus();
       if (titleInput.select) titleInput.select();
-      else if (titleInput.setSelectionRange) titleInput.setSelectionRange(0, titleInput.value.length);
+      else if (titleInput.setSelectionRange)
+        titleInput.setSelectionRange(0, titleInput.value.length);
     }
   };
 
   item.appendChild(span);
   item.appendChild(addSub);
 
-  // --- botón para borrar página ---
   const delBtn = document.createElement("button");
   delBtn.className = "add-subpage delete-page";
   delBtn.title = "Borrar página";
   delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
   delBtn.onclick = (e) => {
     e.stopPropagation();
-    // confirmar
-    if (!confirm(`¿Borrar página "${page.title}" y todas sus subpáginas?`)) return;
+    if (!confirm(`¿Borrar página "${page.title}" y todas sus subpáginas?`))
+      return;
     deletePageAndChildren(page.id);
-    // si la página actual fue borrada, navegar al padre o a la primera página
-    if (!state.pages.find(p => p.id === state.currentPageId)) {
-      const parent = state.pages.find(p => p.id === page.parentId);
-      state.currentPageId = parent ? parent.id : (state.pages[0] ? state.pages[0].id : null);
+    if (!state.pages.find((p) => p.id === state.currentPageId)) {
+      const parent = state.pages.find((p) => p.id === page.parentId);
+      state.currentPageId = parent
+        ? parent.id
+        : state.pages[0]
+        ? state.pages[0].id
+        : null;
     }
-    save(); render();
+    save();
+    render();
   };
   item.appendChild(delBtn);
   container.appendChild(item);
 
-  // --- renderizar subpáginas recursivamente ---
-  const children = state.pages.filter(p => p.parentId === page.id);
-  children.forEach(child => renderPageTree(child, container, depth + 1));
+  const children = state.pages.filter((p) => p.parentId === page.id);
+  children.forEach((child) => renderPageTree(child, container, depth + 1));
 }
 
-// Eliminar página y todos sus descendientes recursivamente
 function deletePageAndChildren(pageId) {
-  // recopilar ids a borrar
   const toDelete = new Set();
   function collect(id) {
     toDelete.add(id);
-    state.pages.filter(p => p.parentId === id).forEach(ch => collect(ch.id));
+    state.pages
+      .filter((p) => p.parentId === id)
+      .forEach((ch) => collect(ch.id));
   }
   collect(pageId);
-  state.pages = state.pages.filter(p => !toDelete.has(p.id));
+  state.pages = state.pages.filter((p) => !toDelete.has(p.id));
 }
 
 // ========== Breadcrumb ==========
@@ -146,7 +156,7 @@ function renderBreadcrumb() {
   let current = page;
   while (current) {
     trail.unshift(current);
-    current = state.pages.find(p => p.id === current.parentId);
+    current = state.pages.find((p) => p.id === current.parentId);
   }
 
   trail.forEach((p, i) => {
@@ -170,6 +180,12 @@ function renderBreadcrumb() {
 }
 
 // ========== Editor principal ==========
+
+let draggedBlock = null;
+let dropIndicator = null;
+let slashCtx = { block: null, activeIndex: 0 };
+let slashKeyHandler = null;
+
 function renderEditor() {
   const page = currentPage();
   el("#pageTitle").value = page.title;
@@ -178,27 +194,24 @@ function renderEditor() {
   const editor = el("#editor");
   editor.innerHTML = "";
 
+  // Si no hay bloques, crear uno vacío
   if (page.blocks.length === 0) {
     page.blocks.push({ id: crypto.randomUUID(), type: "paragraph", text: "" });
     save();
   }
 
+  // Renderizar cada bloque
   page.blocks.forEach((b, idx) => {
     const blockEl = document.createElement("div");
     blockEl.className = "block";
     blockEl.dataset.id = b.id;
     blockEl.dataset.type = b.type;
 
-    // allow programmatic selection visual
-    blockEl.classList.remove('selected');
-
-    // Controls (mover)
+    // --- Controles laterales (mover) ---
     const controls = document.createElement("div");
     controls.className = "block-controls";
     controls.innerHTML = `<button class="move" title="Mover"><i data-lucide="move"></i></button>`;
     const moveBtn = controls.querySelector(".move");
-
-    // start drag on mousedown of the move button
     moveBtn.addEventListener("mousedown", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -206,32 +219,40 @@ function renderEditor() {
       draggedBlock.classList.add("dragging");
       if (!dropIndicator) dropIndicator = createDropIndicator();
     });
-
     blockEl.appendChild(controls);
 
-    // Contenido editable por defecto
+    // --- Contenido principal ---
     const content = document.createElement("div");
     content.className = "block-content";
-    content.contentEditable = "true";
-    content.innerText = b.text || "";
 
-    // Estilos y comportamientos por tipo
+    // ===== Render según tipo =====
     switch (b.type) {
       case "h1":
+        content.contentEditable = "true";
+        content.innerText = b.text || "";
         content.style.fontSize = "28px";
         content.style.fontWeight = "800";
         break;
+
       case "h2":
+        content.contentEditable = "true";
+        content.innerText = b.text || "";
         content.style.fontSize = "22px";
         content.style.fontWeight = "700";
         break;
+
       case "quote":
-        content.style.borderLeft = "3px solid var(--accent)";
+        content.contentEditable = "true";
+        content.innerText = b.text || "";
+        content.style.borderLeft = "3px solid var(--vscode-accent)";
         content.style.paddingLeft = "10px";
+        content.style.opacity = ".9";
         content.style.fontStyle = "italic";
-        content.style.opacity = ".8";
         break;
+
       case "code":
+        content.contentEditable = "true";
+        content.innerText = b.text || "";
         content.style.fontFamily = "monospace";
         content.style.background = "#0e1220";
         content.style.border = "1px solid #1f2538";
@@ -239,11 +260,12 @@ function renderEditor() {
         content.style.borderRadius = "6px";
         content.style.whiteSpace = "pre-wrap";
         break;
+
       case "link":
+        content.contentEditable = "false";
         content.style.color = "var(--vscode-accent)";
         content.style.cursor = "pointer";
         content.style.textDecoration = "underline";
-        content.contentEditable = "false";
         content.innerText = b.text || "→ Página sin título";
         content.addEventListener("click", () => {
           if (b.pageId) {
@@ -253,49 +275,56 @@ function renderEditor() {
           }
         });
         break;
+
       case "todo":
-        // Use a non-label structure so clicks inside the editable span don't toggle the checkbox
+        content.contentEditable = "false";
         content.innerHTML = `
           <div class="todo-item">
             <input type="checkbox" ${b.checked ? "checked" : ""} />
             <span class="todo-text" contenteditable="true">${b.text || ""}</span>
           </div>
         `;
-        content.contentEditable = false;
-
         const checkbox = content.querySelector("input");
         const textEl = content.querySelector(".todo-text");
 
-        checkbox.addEventListener('change', () => {
+        checkbox.addEventListener("change", () => {
           b.checked = checkbox.checked;
           save();
         });
 
-        textEl.addEventListener('input', () => {
+        textEl.addEventListener("input", () => {
           b.text = textEl.innerText;
           save();
         });
 
-        // Prevent clicks on the text from bubbling (so they don't toggle checkbox / start drag)
-        textEl.addEventListener('mousedown', (ev) => ev.stopPropagation());
-        textEl.addEventListener('click', (ev) => ev.stopPropagation());
+        textEl.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        textEl.addEventListener("click", (ev) => ev.stopPropagation());
 
-        // Enter -> nueva tarea debajo
         textEl.addEventListener("keydown", (ev) => {
           if (ev.key === "Enter") {
             ev.preventDefault();
-            const newBlock = { id: crypto.randomUUID(), type: "todo", text: "" };
-            const idxInPage = currentPage().blocks.findIndex(x => x.id === b.id);
+            const newBlock = {
+              id: crypto.randomUUID(),
+              type: "todo",
+              text: "",
+              checked: false,
+            };
+            const idxInPage = currentPage().blocks.findIndex((x) => x.id === b.id);
             currentPage().blocks.splice(idxInPage + 1, 0, newBlock);
-            save(); renderEditor();
-            // focus the new todo text
+            save();
+            renderEditor();
             el(`.block[data-id="${newBlock.id}"] .todo-text`)?.focus();
           }
         });
         break;
+
+      default:
+        content.contentEditable = "true";
+        content.innerText = b.text || "";
+        break;
     }
 
-    // Eventos para contenido editable (no link, no todo)
+    // ===== Eventos generales de escritura =====
     if (content.isContentEditable) {
       content.addEventListener("input", () => {
         b.text = content.innerText;
@@ -305,100 +334,146 @@ function renderEditor() {
       });
       content.addEventListener("keydown", (e) => handleKeyNav(e, b, idx, page));
     }
-    // When user clicks the block (outside editable children) or focuses content, mark it selected
-    blockEl.addEventListener('click', (ev) => {
-      // only mark when click is not inside interactive children (we stopPropagation where needed)
-      document.querySelectorAll('.block.selected').forEach(n => n.classList.remove('selected'));
-      blockEl.classList.add('selected');
-    });
-    // Focus on content should also select the block
-    content.addEventListener('focus', () => {
-      document.querySelectorAll('.block.selected').forEach(n => n.classList.remove('selected'));
-      blockEl.classList.add('selected');
-    });
 
     blockEl.appendChild(content);
     editor.appendChild(blockEl);
-  });
+  }); // cierre forEach
 
-// ========== NUEVO SISTEMA DE DRAG & DROP (mejorado) ==========
-let draggedBlock = null;
-let dropIndicator = null;
-
-function createDropIndicator() {
-  const d = document.createElement('div');
-  d.className = 'drop-indicator';
-  return d;
-}
-
-// Global key handler: Delete key removes the selected block
-document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Delete') return;
-  const sel = el('.block.selected');
-  if (!sel) return;
-  e.preventDefault();
-  const id = sel.dataset.id;
-  const page = currentPage();
-  const idx = page.blocks.findIndex(b => b.id === id);
-  if (idx === -1) return;
-  page.blocks.splice(idx, 1);
-  save();
-  renderEditor();
-  // focus next block content if exists, else previous
-  const nextBlock = el(`.block[data-id="${page.blocks[idx] ? page.blocks[idx].id : (page.blocks[idx-1] ? page.blocks[idx-1].id : '')}"] .block-content`);
-  if (nextBlock) nextBlock.focus();
-});
-
-// move handler: show where the block will be dropped
-editor.addEventListener('mousemove', (e) => {
-  if (!draggedBlock) return;
-  const after = getDragAfterElement(editor, e.clientY);
-  // remove existing indicator
-  if (dropIndicator && dropIndicator.parentElement) dropIndicator.parentElement.removeChild(dropIndicator);
-  if (after == null) editor.appendChild(dropIndicator);
-  else editor.insertBefore(dropIndicator, after);
-});
-
-// end drag: insert draggedBlock where indicator is, then cleanup + persist order
-document.addEventListener('mouseup', (e) => {
-  if (!draggedBlock) return;
-  // if indicator present, insert before it; otherwise do nothing
-  if (dropIndicator && dropIndicator.parentElement) {
-    dropIndicator.parentElement.insertBefore(draggedBlock, dropIndicator);
-    dropIndicator.parentElement.removeChild(dropIndicator);
+  // === Permitir clic/escritura en área vacía para crear bloque nuevo ===
+  const editorContainer = el("#editor-container");
+  if (editorContainer) {
+    editorContainer.onclick = (e) => {
+      const target = e.target;
+      const isInsideBlock = target.closest && target.closest(".block");
+      const isMinimap = target.closest && target.closest("#minimap");
+      if (!isInsideBlock && !isMinimap) {
+        const page = currentPage();
+        const newBlock = { id: crypto.randomUUID(), type: "paragraph", text: "" };
+        page.blocks.push(newBlock);
+        save();
+        renderEditor();
+        el(`.block[data-id="${newBlock.id}"] .block-content`)?.focus();
+      }
+    };
   }
-  // persist new order
-  const orderIds = els('.block', editor).map(n => n.dataset.id);
-  const page = currentPage();
-  page.blocks.sort((a, b) => orderIds.indexOf(a.id) - orderIds.indexOf(b.id));
-  save();
-  draggedBlock.classList.remove('dragging');
-  draggedBlock = null;
-  dropIndicator = null;
-});
 
   lucide.createIcons();
 }
 
-// ========== Utilidades ==========
+// ========== Drag & Drop ==========
+function createDropIndicator() {
+  const d = document.createElement("div");
+  d.className = "drop-indicator";
+  return d;
+}
+
 function getDragAfterElement(container, y) {
   const els = [...container.querySelectorAll(".block:not(.dragging)")];
-  return els.reduce((closest, child) => {
-    const box = child.getBoundingClientRect();
-    const offset = y - box.top - box.height / 2;
-    if (offset < 0 && offset > closest.offset) return { offset, element: child };
-    return closest;
-  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+  return els.reduce(
+    (closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset)
+        return { offset, element: child };
+      return closest;
+    },
+    { offset: Number.NEGATIVE_INFINITY, element: null }
+  ).element;
 }
-function getCaretPosition(elm) {
-  const selection = window.getSelection();
-  if (!selection.rangeCount) return 0;
-  const range = selection.getRangeAt(0);
-  const pre = range.cloneRange();
-  pre.selectNodeContents(elm);
-  pre.setEnd(range.endContainer, range.endOffset);
-  return pre.toString().length;
+
+// ===== Minimap Trash helpers =====
+function getMinimapEl() { return el('#minimap'); }
+
+function isOverElement(x, y, element) {
+  if (!element) return false;
+  const r = element.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
+
+function animateMinimapTrash(state) {
+  const mm = getMinimapEl();
+  if (!mm) return;
+  if (state === 'hover-on') mm.classList.add('trash-hover');
+  if (state === 'hover-off') mm.classList.remove('trash-hover');
+  if (state === 'delete') {
+    mm.classList.remove('trash-hover');
+    mm.classList.add('trash-delete');
+    setTimeout(() => mm.classList.remove('trash-delete'), 220);
+  }
+}
+
+function deleteBlockById(blockId) {
+  const page = currentPage();
+  const idx = page.blocks.findIndex(b => b.id === blockId);
+  if (idx !== -1) {
+    page.blocks.splice(idx, 1);
+    save();
+    renderEditor();
+  }
+}
+
+// ====== Eventos drag sobre el editor (solo cuando hay drag) ======
+document.addEventListener('mousemove', (e) => {
+  if (!draggedBlock) return;
+  const editorEl = el('#editor');
+
+  const mm = getMinimapEl();
+  const overTrash = isOverElement(e.clientX, e.clientY, mm);
+
+  if (overTrash) {
+    animateMinimapTrash('hover-on');
+    if (dropIndicator && dropIndicator.parentElement) {
+      dropIndicator.parentElement.removeChild(dropIndicator);
+    }
+    return;
+  } else {
+    animateMinimapTrash('hover-off');
+  }
+
+  const after = getDragAfterElement(editorEl, e.clientY);
+  if (dropIndicator && dropIndicator.parentElement) {
+    dropIndicator.parentElement.removeChild(dropIndicator);
+  }
+  if (!dropIndicator) dropIndicator = createDropIndicator();
+  if (after == null) editorEl.appendChild(dropIndicator);
+  else editorEl.insertBefore(dropIndicator, after);
+});
+
+document.addEventListener('mouseup', (e) => {
+  if (!draggedBlock) return;
+
+  const mm = getMinimapEl();
+  const overTrash = isOverElement(e.clientX, e.clientY, mm);
+
+  if (overTrash) {
+    animateMinimapTrash('delete');
+    const id = draggedBlock.dataset.id;
+    if (dropIndicator && dropIndicator.parentElement) {
+      dropIndicator.parentElement.removeChild(dropIndicator);
+    }
+    draggedBlock.classList.remove('dragging');
+    draggedBlock = null;
+    dropIndicator = null;
+    deleteBlockById(id);
+    return;
+  }
+
+  if (dropIndicator && dropIndicator.parentElement) {
+    dropIndicator.parentElement.insertBefore(draggedBlock, dropIndicator);
+    dropIndicator.parentElement.removeChild(dropIndicator);
+  }
+
+  const editorEl = el('#editor');
+  const orderIds = els('.block', editorEl).map(n => n.dataset.id);
+  const page = currentPage();
+  page.blocks.sort((a, b) => orderIds.indexOf(a.id) - orderIds.indexOf(b.id));
+  save();
+
+  draggedBlock.classList.remove('dragging');
+  draggedBlock = null;
+  dropIndicator = null;
+  animateMinimapTrash('hover-off');
+});
 
 // ========== Navegación con teclado ==========
 function handleKeyNav(e, b, idx, page) {
@@ -406,23 +481,38 @@ function handleKeyNav(e, b, idx, page) {
   const content = e.target;
   const text = content.innerText.trim();
 
+  if (
+    (e.code === "Space" || e.key === "/") &&
+    !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey
+  ) {
+    const caretPos = getCaretPosition(content);
+    if (caretPos === 0 && (text === "" || text === "/")) {
+      e.preventDefault();
+      showSlashMenu(b, content);
+      return;
+    }
+  }
+
   if (e.altKey && e.key === "ArrowUp") {
     e.preventDefault();
     if (idx > 0) {
       const temp = page.blocks[idx - 1];
       page.blocks[idx - 1] = page.blocks[idx];
       page.blocks[idx] = temp;
-      save(); renderEditor();
+      save();
+      renderEditor();
       el(`.block[data-id="${b.id}"] .block-content`)?.focus();
     }
   }
+
   if (e.altKey && e.key === "ArrowDown") {
     e.preventDefault();
     if (idx < page.blocks.length - 1) {
       const temp = page.blocks[idx + 1];
       page.blocks[idx + 1] = page.blocks[idx];
       page.blocks[idx] = temp;
-      save(); renderEditor();
+      save();
+      renderEditor();
       el(`.block[data-id="${b.id}"] .block-content`)?.focus();
     }
   }
@@ -431,30 +521,32 @@ function handleKeyNav(e, b, idx, page) {
     e.preventDefault();
     const newBlock = { id: crypto.randomUUID(), type: "paragraph", text: "" };
     page.blocks.splice(idx + 1, 0, newBlock);
-    save(); renderEditor();
+    save();
+    renderEditor();
     el(`.block[data-id="${newBlock.id}"] .block-content`)?.focus();
   }
 
   if (e.key === "Backspace" && text === "") {
     e.preventDefault();
     page.blocks.splice(idx, 1);
-    save(); renderEditor();
+    save();
+    renderEditor();
     const prev = editor.children[idx - 1];
     if (prev) prev.querySelector(".block-content").focus();
   }
 }
 
-// ========== Slash Menu con navegación ==========
-let slashCtx = { block: null, activeIndex: 0 };
-let slashKeyHandler = null;
-
+// ========== Slash Menu ==========
 function showSlashMenu(block, anchor) {
-  slashCtx.block = block;
   const menu = el("#slashMenu");
+  if (!menu) return;
+
+  slashCtx.block = block;
   const rect = anchor.getBoundingClientRect();
-  menu.style.top = rect.bottom + "px";
+  menu.style.top = rect.bottom + window.scrollY + "px";
   menu.style.left = rect.left + "px";
   menu.classList.remove("hidden");
+
   const options = els("#slashMenu > div");
   slashCtx.activeIndex = 0;
   updateSlashActive(options);
@@ -463,27 +555,62 @@ function showSlashMenu(block, anchor) {
     opt.onclick = () => pickType(opt.dataset.type);
   });
 
+  if (slashKeyHandler)
+    document.removeEventListener("keydown", slashKeyHandler);
+
   slashKeyHandler = (e) => {
     if (menu.classList.contains("hidden")) return;
-    if (["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key)) e.preventDefault();
+    const keyIsSpace =
+      e.key === " " || e.key === "Spacebar" || e.code === "Space";
+    if (
+      !["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key) &&
+      !keyIsSpace
+    )
+      return;
+
+    e.preventDefault();
+
     if (e.key === "ArrowDown") {
       slashCtx.activeIndex = (slashCtx.activeIndex + 1) % options.length;
       updateSlashActive(options);
     } else if (e.key === "ArrowUp") {
-      slashCtx.activeIndex = (slashCtx.activeIndex - 1 + options.length) % options.length;
+      slashCtx.activeIndex =
+        (slashCtx.activeIndex - 1 + options.length) % options.length;
       updateSlashActive(options);
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" || keyIsSpace) {
       const opt = options[slashCtx.activeIndex];
       pickType(opt.dataset.type);
     } else if (e.key === "Escape") {
       hideSlashMenu();
     }
   };
+
   document.addEventListener("keydown", slashKeyHandler);
+
+  const outsideClick = (ev) => {
+    if (!menu.contains(ev.target)) hideSlashMenu();
+  };
+
+  // Delete/Backspace para borrar el bloque seleccionado (cuando no escribes)
+  document.addEventListener('keydown', (e) => {
+    const isEditable = document.activeElement && document.activeElement.isContentEditable;
+    const isDeleteKey = (e.key === 'Delete') || (e.key === 'Backspace');
+    if (!isDeleteKey) return;
+    if (isEditable) return;
+    const sel = el('.block.selected');
+    if (!sel) return;
+    e.preventDefault();
+    deleteBlockById(sel.dataset.id);
+  });
+
+  document.addEventListener("click", outsideClick);
+  menu._outsideClick = outsideClick;
 }
+
 function updateSlashActive(options) {
   options.forEach((o, i) => o.classList.toggle("active", i === slashCtx.activeIndex));
 }
+
 function pickType(type) {
   const page = currentPage();
   const b = slashCtx.block;
@@ -495,26 +622,21 @@ function pickType(type) {
       id,
       title: b.text.replace("/", "").trim() || "Nueva página",
       parentId: page.id,
-      blocks: [
-        { id: crypto.randomUUID(), type: "paragraph", text: "" }
-      ]
+      blocks: [{ id: crypto.randomUUID(), type: "paragraph", text: "" }],
     };
     state.pages.push(newPage);
-
-    // reemplazar el bloque por un link a la nueva página
     b.type = "link";
     b.text = `→ ${newPage.title}`;
     b.pageId = id;
-
     save();
     renderSidebar();
     renderEditor();
-    return hideSlashMenu();
+    hideSlashMenu();
+    return;
   }
 
-  // comportamiento existente
   b.type = type;
-  b.text = (b.text || "").replace("/", "");
+  b.text = (b.text || "").replace("/", "").trim();
   save();
   renderEditor();
   el(`.block[data-id="${b.id}"] .block-content`)?.focus();
@@ -523,37 +645,58 @@ function pickType(type) {
 
 function hideSlashMenu() {
   const menu = el("#slashMenu");
+  if (!menu) return;
   menu.classList.add("hidden");
   slashCtx.block = null;
+
   if (slashKeyHandler) {
     document.removeEventListener("keydown", slashKeyHandler);
     slashKeyHandler = null;
   }
+  if (menu._outsideClick) {
+    document.removeEventListener("click", menu._outsideClick);
+    menu._outsideClick = null;
+  }
+}
+
+// ========== Utilidades ==========
+function getCaretPosition(elm) {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return 0;
+  const range = selection.getRangeAt(0);
+  const pre = range.cloneRange();
+  pre.selectNodeContents(elm);
+  pre.setEnd(range.endContainer, range.endOffset);
+  return pre.toString().length;
 }
 
 // ========== Eventos globales ==========
 function bindUI() {
   el("#addPageBtn").onclick = () => {
     const id = crypto.randomUUID();
-    state.pages.unshift({ id, title: "Nueva página", parentId: null, blocks: [] });
+    state.pages.unshift({
+      id,
+      title: "Nueva página",
+      parentId: null,
+      blocks: [],
+    });
     state.currentPageId = id;
-    save(); render();
+    save();
+    render();
     const titleInput = el("#pageTitle");
     if (titleInput) {
       titleInput.focus();
       if (titleInput.select) titleInput.select();
-      else if (titleInput.setSelectionRange) titleInput.setSelectionRange(0, titleInput.value.length);
+      else if (titleInput.setSelectionRange)
+        titleInput.setSelectionRange(0, titleInput.value.length);
     }
   };
-  el("#newBlockBtn").onclick = () => {
-    const page = currentPage();
-    page.blocks.push({ id: crypto.randomUUID(), type: "paragraph", text: "" });
-    save(); renderEditor();
-  };
+
   el("#pageTitle").oninput = (e) => {
     const page = currentPage();
     page.title = e.target.value;
-    save(); renderSidebar();
+    save();
+    renderSidebar();
     renderBreadcrumb();
   };
 }
