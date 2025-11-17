@@ -6,36 +6,68 @@ const state = {
   currentPageId: null,
 };
 
-const STORAGE_KEY = "notion-lite-v6";
+// =======================
+//  🔵  API REMOTA (KV)
+// =======================
+async function load() {
+  try {
+    const res = await fetch("/api/state");
+    const remote = await res.json();
 
-// ========== Persistencia ==========
-function load() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw) Object.assign(state, JSON.parse(raw));
-  else {
-    const rootId = crypto.randomUUID();
-    state.pages = [
-      {
-        id: rootId,
-        title: "Mi primera página",
-        parentId: null,
-        blocks: [
-          { id: crypto.randomUUID(), type: "h1", text: "Bienvenido a Notion Lite 👋" },
-          {
-            id: crypto.randomUUID(),
-            type: "paragraph",
-            text: "Usa Alt + ↑ o ↓ para mover bloques. Crea subpáginas desde la barra lateral.",
-          },
-        ],
-      },
-    ];
-    state.currentPageId = rootId;
-    save();
+    if (remote && remote.pages) {
+      Object.assign(state, remote);
+      console.log("🔵 Estado cargado desde KV:", state);
+    } else {
+      console.log("🟡 No había estado remoto. Iniciando…");
+      initLocalState();
+      await save();
+    }
+  } catch (err) {
+    console.error("❌ Error cargando KV:", err);
+    initLocalState();
   }
 }
-function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+async function save() {
+  try {
+    await fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state),
+    });
+    console.log("💾 Estado guardado en KV");
+  } catch (err) {
+    console.error("❌ Error guardando en KV:", err);
+  }
 }
+
+// =======================
+// Estado inicial
+// =======================
+function initLocalState() {
+  const rootId = crypto.randomUUID();
+  state.pages = [
+    {
+      id: rootId,
+      title: "Mi primera página",
+      parentId: null,
+      blocks: [
+        {
+          id: crypto.randomUUID(),
+          type: "h1",
+          text: "Bienvenido a Notion Lite 👋",
+        },
+        {
+          id: crypto.randomUUID(),
+          type: "paragraph",
+          text: "Usa Alt + ↑ o ↓ para mover bloques. Crea subpáginas desde la barra lateral.",
+        },
+      ],
+    },
+  ];
+  state.currentPageId = rootId;
+}
+
 function currentPage() {
   return state.pages.find((p) => p.id === state.currentPageId);
 }
